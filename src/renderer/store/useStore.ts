@@ -1,0 +1,353 @@
+import { create } from 'zustand';
+import type {
+  Material, CourseInfo, ChatMessage, TestSession, Chapter,
+  OnboardingStep, Config, LLMSettings, Subject, LayoutMode, CheatsheetEntry, TestEntry,
+} from '../../types';
+import { DEFAULT_LLM_SETTINGS } from '../../types';
+import type { Lang } from '../i18n/translations';
+
+interface AppState {
+  // Onboarding
+  onboardingComplete: boolean;
+  onboardingStep: OnboardingStep;
+
+  // User
+  userName: string;
+
+  // Subjects (multi-course support)
+  subjects: Subject[];
+  activeSubjectId: string | null;
+  sidebarOpen: boolean;
+
+  // Active subject's flat state
+  courseInfo: CourseInfo;
+  learningGoal: string;
+  languagePreference: string;
+  detectedLanguage: string;
+  uploadedMaterials: Material[];
+  studyGuide: string;
+  cheatsheets: CheatsheetEntry[];
+
+  // Chat
+  chatMessages: ChatMessage[];
+  isGraceTyping: boolean;
+
+  // Chapters & Tests
+  chapters: Chapter[];
+  tests: TestEntry[];
+  activeTest: TestSession | undefined;
+
+  // UI
+  activePanel: 'folder' | 'test';
+  settingsOpen: boolean;
+  layoutMode: LayoutMode;
+
+  // LLM
+  llmSettings: LLMSettings;
+  llmReady: boolean;
+
+  // UI Language
+  uiLanguage: Lang;
+
+  // ── Actions ──────────────────────────────────────────────────────────────
+
+  setUiLanguage: (lang: Lang) => void;
+  loadFromConfig: (config: Config) => void;
+  loadLLMSettings: (settings: LLMSettings) => void;
+  saveLLMSettings: (settings: Partial<LLMSettings>) => void;
+
+  setOnboardingComplete: (val: boolean) => void;
+  setOnboardingStep: (step: OnboardingStep) => void;
+  setUserName: (name: string) => void;
+  setCourseInfo: (info: Partial<CourseInfo>) => void;
+  setLearningGoal: (goal: string) => void;
+  setLanguagePreference: (lang: string) => void;
+  setDetectedLanguage: (lang: string) => void;
+
+  switchSubject: (id: string) => void;
+  createNewSubject: () => void;
+  deleteSubject: (id: string) => void;
+  togglePinSubject: (id: string) => void;
+  setSidebarOpen: (val: boolean) => void;
+
+  addMaterial: (m: Material) => void;
+  removeMaterial: (id: string) => void;
+  setStudyGuide: (c: string) => void;
+  addCheatsheet: (entry: CheatsheetEntry) => void;
+
+  addChatMessage: (msg: ChatMessage) => void;
+  updateLastMessage: (id: string, content: string) => void;
+  clearChatMessages: () => void;
+  setGraceTyping: (val: boolean) => void;
+
+  addChapter: (ch: Chapter) => void;
+  addTest: (entry: TestEntry) => void;
+  setActiveTest: (t?: TestSession) => void;
+  setActivePanel: (p: 'folder' | 'test') => void;
+  setSettingsOpen: (val: boolean) => void;
+  setLayoutMode: (mode: LayoutMode) => void;
+
+  reset: () => void;
+}
+
+const INIT: Omit<AppState,
+  'loadFromConfig' | 'loadLLMSettings' | 'saveLLMSettings' |
+  'setOnboardingComplete' | 'setOnboardingStep' | 'setUserName' |
+  'setCourseInfo' | 'setLearningGoal' | 'setLanguagePreference' | 'setDetectedLanguage' |
+  'switchSubject' | 'createNewSubject' | 'deleteSubject' | 'togglePinSubject' | 'setSidebarOpen' |
+  'addMaterial' | 'removeMaterial' | 'setStudyGuide' | 'addCheatsheet' |
+  'addChatMessage' | 'updateLastMessage' | 'clearChatMessages' | 'setGraceTyping' |
+  'addChapter' | 'addTest' | 'setActiveTest' | 'setActivePanel' | 'setSettingsOpen' | 'reset' |
+  'setUiLanguage' | 'setLayoutMode'
+> = {
+  onboardingComplete: false,
+  onboardingStep: 0 as OnboardingStep,
+  userName: '',
+  subjects: [],
+  activeSubjectId: null,
+  sidebarOpen: true,
+  courseInfo: { name: '', language: 'en' },
+  learningGoal: '',
+  languagePreference: '',
+  detectedLanguage: 'en',
+  uploadedMaterials: [],
+  studyGuide: '',
+  cheatsheets: [],
+  chatMessages: [],
+  isGraceTyping: false,
+  chapters: [],
+  tests: [],
+  activeTest: undefined,
+  activePanel: 'folder',
+  settingsOpen: false,
+  layoutMode: 'normal' as LayoutMode,
+  llmSettings: { ...DEFAULT_LLM_SETTINGS },
+  llmReady: false,
+  uiLanguage: 'en' as Lang,
+};
+
+function mkid(): string {
+  return `sub_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`;
+}
+
+export const useStore = create<AppState>((set) => ({
+  ...INIT,
+
+  loadFromConfig: (config) => set(() => {
+    let subjects = config.subjects ?? [];
+    let activeSubjectId = config.activeSubjectId ?? null;
+
+    // Migrate old single-course configs to subjects
+    if (subjects.length === 0 && (config.uploadedMaterials?.length ?? 0) > 0) {
+      const legacy: Subject = {
+        id: 'sub_legacy',
+        name: config.courseInfo?.name || 'My Course',
+        materials: config.uploadedMaterials ?? [],
+        courseInfo: config.courseInfo ?? { name: '', language: 'en' },
+        learningGoal: config.learningGoal ?? '',
+        createdAt: new Date().toISOString(),
+      };
+      subjects = [legacy];
+      activeSubjectId = 'sub_legacy';
+    }
+
+    const active = subjects.find(s => s.id === activeSubjectId);
+    return {
+      onboardingComplete: config.onboardingComplete ?? false,
+      userName: config.userName ?? '',
+      subjects,
+      activeSubjectId,
+      courseInfo: active?.courseInfo ?? { name: '', language: 'en' },
+      learningGoal: active?.learningGoal ?? '',
+      uploadedMaterials: active?.materials ?? [],
+      chatMessages: active?.chatMessages ?? [],
+      languagePreference: config.languagePreference ?? '',
+      detectedLanguage: config.detectedLanguage ?? 'en',
+      ...(config.uiLanguage ? { uiLanguage: config.uiLanguage } : {}),
+    };
+  }),
+
+  setUiLanguage: (lang) => set({ uiLanguage: lang }),
+
+  loadLLMSettings: (settings) => set({ llmSettings: settings, llmReady: !!settings.apiKey }),
+
+  saveLLMSettings: (partial) => set((s) => {
+    const merged = { ...s.llmSettings, ...partial };
+    return { llmSettings: merged, llmReady: !!merged.apiKey };
+  }),
+
+  setOnboardingComplete: (val) => set({ onboardingComplete: val }),
+  setOnboardingStep: (step) => set({ onboardingStep: step }),
+  setUserName: (name) => set({ userName: name }),
+  setCourseInfo: (info) => set((s) => ({ courseInfo: { ...s.courseInfo, ...info } })),
+  setLearningGoal: (goal) => set({ learningGoal: goal }),
+  setLanguagePreference: (lang) => set({ languagePreference: lang }),
+  setDetectedLanguage: (lang) => set({ detectedLanguage: lang }),
+
+  switchSubject: (id) => set((s) => {
+    // Save current chat messages into the departing subject first
+    const subjectsWithSaved = s.activeSubjectId
+      ? s.subjects.map(sub =>
+          sub.id === s.activeSubjectId
+            ? { ...sub, chatMessages: s.chatMessages }
+            : sub
+        )
+      : s.subjects;
+
+    const subject = subjectsWithSaved.find(sub => sub.id === id);
+    if (!subject) return {};
+    return {
+      subjects: subjectsWithSaved,
+      activeSubjectId: id,
+      uploadedMaterials: subject.materials,
+      courseInfo: subject.courseInfo,
+      learningGoal: subject.learningGoal,
+      chatMessages: subject.chatMessages ?? [],
+      chapters: [],
+      studyGuide: '',
+      cheatsheets: subject.cheatsheets ?? [],
+      tests: subject.tests ?? [],
+      activeTest: undefined,
+    };
+  }),
+
+  createNewSubject: () => set({
+    activeSubjectId: null,
+    uploadedMaterials: [],
+    chatMessages: [],
+    chapters: [],
+    studyGuide: '',
+    cheatsheets: [],
+    tests: [],
+    activeTest: undefined,
+    courseInfo: { name: '', language: 'en' },
+    learningGoal: '',
+  }),
+
+  deleteSubject: (id) => set((s) => {
+    const subjects = s.subjects.filter(sub => sub.id !== id);
+    if (s.activeSubjectId !== id) return { subjects };
+    // Deleted the active subject — switch to most recent remaining, or null
+    const next = subjects[subjects.length - 1];
+    if (!next) return { subjects, activeSubjectId: null, uploadedMaterials: [], chatMessages: [], chapters: [], studyGuide: '', cheatsheets: [], tests: [], activeTest: undefined, courseInfo: { name: '', language: 'en' }, learningGoal: '' };
+    return {
+      subjects,
+      activeSubjectId: next.id,
+      uploadedMaterials: next.materials,
+      courseInfo: next.courseInfo,
+      learningGoal: next.learningGoal,
+      chatMessages: next.chatMessages ?? [],
+      chapters: [],
+      studyGuide: '',
+      cheatsheets: next.cheatsheets ?? [],
+      tests: next.tests ?? [],
+      activeTest: undefined,
+    };
+  }),
+
+  togglePinSubject: (id) => set((s) => ({
+    subjects: s.subjects.map(sub =>
+      sub.id === id ? { ...sub, pinned: !sub.pinned } : sub
+    ),
+  })),
+
+  setSidebarOpen: (val) => set({ sidebarOpen: val }),
+
+  addMaterial: (m) => set((s) => {
+    if (s.activeSubjectId === null) {
+      const id = mkid();
+      const name = m.name.replace(/\.[^.]+$/, '').replace(/[_-]/g, ' ');
+      const newSub: Subject = {
+        id, name, materials: [m],
+        courseInfo: { name, language: 'en' },
+        learningGoal: '',
+        createdAt: new Date().toISOString(),
+      };
+      return {
+        subjects: [...s.subjects, newSub],
+        activeSubjectId: id,
+        uploadedMaterials: [m],
+        courseInfo: { name, language: 'en' },
+      };
+    }
+    const newMaterials = [...s.uploadedMaterials, m];
+    const subjects = s.subjects.map(sub =>
+      sub.id === s.activeSubjectId ? { ...sub, materials: newMaterials } : sub
+    );
+    return { subjects, uploadedMaterials: newMaterials };
+  }),
+
+  removeMaterial: (id) => set((s) => {
+    const newMaterials = s.uploadedMaterials.filter(m => m.id !== id);
+    const subjects = s.subjects.map(sub =>
+      sub.id === s.activeSubjectId ? { ...sub, materials: newMaterials } : sub
+    );
+    return { subjects, uploadedMaterials: newMaterials };
+  }),
+
+  setStudyGuide: (c) => set({ studyGuide: c }),
+  addCheatsheet: (entry) => set((s) => {
+    const cheatsheets = [...s.cheatsheets, entry];
+    const subjects = s.activeSubjectId
+      ? s.subjects.map(sub =>
+          sub.id === s.activeSubjectId ? { ...sub, cheatsheets } : sub
+        )
+      : s.subjects;
+    return { cheatsheets, subjects };
+  }),
+
+  addChatMessage: (msg) => set((s) => {
+    const newMessages = [...s.chatMessages, msg];
+    // Sync into subjects so auto-save in App.tsx picks it up
+    const subjects = s.activeSubjectId
+      ? s.subjects.map(sub =>
+          sub.id === s.activeSubjectId ? { ...sub, chatMessages: newMessages } : sub
+        )
+      : s.subjects;
+    return { chatMessages: newMessages, subjects };
+  }),
+
+  // Note: updateLastMessage is called for every streaming token — do NOT sync subjects here
+  updateLastMessage: (id, content) => set((s) => ({
+    chatMessages: s.chatMessages.map((m) => m.id === id ? { ...m, content } : m),
+  })),
+
+  clearChatMessages: () => set((s) => {
+    const subjects = s.activeSubjectId
+      ? s.subjects.map(sub =>
+          sub.id === s.activeSubjectId ? { ...sub, chatMessages: [] } : sub
+        )
+      : s.subjects;
+    return { chatMessages: [], subjects };
+  }),
+
+  // Sync subjects when stream ends (typing → false), so the completed response is persisted
+  setGraceTyping: (val) => set((s) => {
+    if (!val && s.activeSubjectId) {
+      const subjects = s.subjects.map(sub =>
+        sub.id === s.activeSubjectId ? { ...sub, chatMessages: s.chatMessages } : sub
+      );
+      return { isGraceTyping: false, subjects };
+    }
+    return { isGraceTyping: val };
+  }),
+
+  addChapter: (ch) => set((s) => ({ chapters: [...s.chapters, ch] })),
+
+  addTest: (entry) => set((s) => {
+    const tests = [...s.tests, entry];
+    const subjects = s.activeSubjectId
+      ? s.subjects.map(sub =>
+          sub.id === s.activeSubjectId ? { ...sub, tests } : sub
+        )
+      : s.subjects;
+    return { tests, subjects };
+  }),
+
+  setActiveTest: (t) => set({ activeTest: t, activePanel: t ? 'test' : 'folder', layoutMode: t ? 'cowork' : 'normal' }),
+  setActivePanel: (p) => set({ activePanel: p }),
+  setSettingsOpen: (val) => set({ settingsOpen: val }),
+  setLayoutMode: (mode) => set({ layoutMode: mode }),
+
+  reset: () => set({ ...INIT }),
+}));
