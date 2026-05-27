@@ -2,9 +2,11 @@
 
 > Turn reading into knowing.
 
+**[github.com/KarlLeen/isgrace](https://github.com/KarlLeen/isgrace)**
+
 isGrace is a free, open-source desktop app that helps you study smarter. Instead of passively consuming content, you actively produce output — summaries, cheatsheets, tests — guided by any AI model you already have access to.
 
-![isGrace Screenshot](public/assets/grace-avatar.png)
+![isGrace](public/assets/grace-avatar.png)
 
 ## Why isGrace?
 
